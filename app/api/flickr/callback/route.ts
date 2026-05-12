@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import oauth from '@/lib/flickr-oauth';
+import { getFlickrOAuth } from '@/lib/flickr-oauth';
 import { cookies } from 'next/headers';
 
 export async function GET(req: NextRequest) {
@@ -26,13 +26,14 @@ export async function GET(req: NextRequest) {
     },
   };
 
+  const oauth = await getFlickrOAuth();
   const url = new URL(request_data.url);
   const authorized = oauth.authorize(request_data, {
     key: oauth_token,
     secret: request_token_secret,
   });
   
-  Object.keys(authorized).forEach((key) => url.searchParams.append(key, authorized[key]));
+  Object.keys(authorized).forEach((key) => url.searchParams.append(key, (authorized as any)[key]));
 
   try {
     const response = await fetch(url.toString());

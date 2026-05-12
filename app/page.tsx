@@ -26,9 +26,9 @@ export default function Home() {
     checkFlickr();
   }, []);
 
-  if (status === 'loading') {
-    return <div className="container flex justify-center items-center h-screen">Loading...</div>;
-  }
+  // if (status === 'loading') {
+  //   return <div className="container flex justify-center items-center h-screen">Loading...</div>;
+  // }
 
   return (
     <main className="container animate-fade-in">
@@ -82,7 +82,7 @@ export default function Home() {
       {session && hasFlickrToken && (
         <div className="mt-16 w-full">
           <div className="text-center mb-8">
-            <h2 className="text-2xl font-semibold mb-4">You're all set!</h2>
+            <h2 className="text-2xl font-semibold mb-4">You&apos;re all set!</h2>
             <p>Select the photos you want to export.</p>
           </div>
           <PhotoGrid />

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import oauth from '@/lib/flickr-oauth';
+import { getFlickrOAuth } from '@/lib/flickr-oauth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Flickr not authenticated' }, { status: 401 });
     }
 
+    const oauth = await getFlickrOAuth();
     let uploadedCount = 0;
 
     for (const photo of photos) {
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       const formData = new FormData();
       // append auth params
       Object.keys(authorized).forEach((key) => {
-        formData.append(key, authorized[key]);
+        formData.append(key, (authorized as any)[key]);
       });
       // append the photo
       formData.append('photo', new Blob([buffer]), filename);
