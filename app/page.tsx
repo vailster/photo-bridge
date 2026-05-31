@@ -6,7 +6,7 @@ import { FaGoogle, FaFlickr, FaSignOutAlt } from 'react-icons/fa';
 import PhotoGrid from '@/components/PhotoGrid';
 
 export default function Home() {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
   const [hasFlickrToken, setHasFlickrToken] = useState(false);
 
   useEffect(() => {

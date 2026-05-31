@@ -2,16 +2,17 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { FaGoogle, FaFlickr } from 'react-icons/fa';
+import { GoogleMediaItem, UploadResult } from '@/types/photos';
 
 export default function PhotoGrid() {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [pickerWindow, setPickerWindow] = useState<Window | null>(null);
+  const pickerWindowRef = useRef<Window | null>(null);
+  const [isPicking, setIsPicking] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
-  const [selectedPhotos, setSelectedPhotos] = useState<any[]>([]);
-
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [selectedPhotos, setSelectedPhotos] = useState<GoogleMediaItem[]>([]);
+  const [isPopupActive, setIsPopupActive] = useState(false);
 
   const startPicker = async () => {
     setLoading(true);
@@ -38,11 +39,14 @@ export default function PhotoGrid() {
         `width=${width},height=${height},left=${left},top=${top}`
       );
       
-      setPickerWindow(popup);
+      pickerWindowRef.current = popup;
+      setIsPicking(true);
+      setIsPopupActive(true);
       
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       console.error(err);
-      setUploadResult(`Error: ${err.message}`);
+      setUploadResult(`Error: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -50,47 +54,80 @@ export default function PhotoGrid() {
 
 
   useEffect(() => {
-    if (sessionId && pickerWindow) {
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/photos/poll?sessionId=${sessionId}`);
-          if (res.status === 202) {
-             // Still picking, keep waiting
-             if (pickerWindow.closed) {
-                clearInterval(pollIntervalRef.current as NodeJS.Timeout);
-                setUploadResult('Picker window was closed before selection was complete.');
-             }
-             return;
-          }
+    let timeoutId: NodeJS.Timeout | null = null;
+    let isCancelled = false;
 
-          const data = await res.json();
-          
-          if (res.ok && data.mediaItems && data.mediaItems.length > 0) {
-            clearInterval(pollIntervalRef.current as NodeJS.Timeout);
-            setSelectedPhotos(data.mediaItems);
-            setUploadResult(`You selected ${data.mediaItems.length} photos! Ready to upload.`);
-          } else if (res.ok) {
-            clearInterval(pollIntervalRef.current as NodeJS.Timeout);
-            setUploadResult(`Selection finished but no photos found. Raw data: ${JSON.stringify(data)}`);
-          } else {
-            if (pickerWindow.closed) {
-               clearInterval(pollIntervalRef.current as NodeJS.Timeout);
-               setUploadResult(`Error fetching selection: ${data.error || 'Unknown error'}`);
-            }
-          }
-        } catch (e: any) {
-           console.error("Polling error:", e);
-           if (pickerWindow.closed) {
-             clearInterval(pollIntervalRef.current as NodeJS.Timeout);
+    // Check popup status every second
+    const popupCheckInterval = setInterval(() => {
+      if (pickerWindowRef.current?.closed) {
+        setIsPopupActive(false);
+      }
+    }, 1000);
+
+    const poll = async () => {
+      if (isCancelled || !sessionId || !isPicking) return;
+      
+      try {
+        const res = await fetch(`/api/photos/poll?sessionId=${sessionId}`);
+        
+        // Check if cancelled after the async operation
+        if (isCancelled) return;
+
+        if (res.status === 202) {
+           if (pickerWindowRef.current?.closed) {
+              setIsPicking(false);
+              setUploadResult('Picker window was closed before selection was complete.');
+              return;
            }
+           timeoutId = setTimeout(poll, 3000);
+           return;
         }
-      }, 3000);
+
+        const data = await res.json();
+        
+        // Re-check cancellation after parsing json
+        if (isCancelled) return;
+
+        if (res.ok && data.mediaItems && data.mediaItems.length > 0) {
+          setIsPicking(false);
+          setSelectedPhotos(data.mediaItems);
+          setUploadResult(`You selected ${data.mediaItems.length} photos! Ready to upload.`);
+        } else if (res.ok) {
+          setIsPicking(false);
+          setUploadResult(`Selection finished but no photos found. Raw data: ${JSON.stringify(data)}`);
+        } else {
+          if (pickerWindowRef.current?.closed) {
+             setIsPicking(false);
+             setUploadResult(`Error fetching selection: ${data.error || 'Unknown error'}`);
+          } else {
+             timeoutId = setTimeout(poll, 3000);
+          }
+        }
+      } catch (e) {
+         if (isCancelled) return;
+         console.error("Polling error:", e);
+         if (pickerWindowRef.current?.closed) {
+           setIsPicking(false);
+         } else {
+           timeoutId = setTimeout(poll, 3000);
+         }
+      }
+    };
+
+    if (sessionId && isPicking) {
+      poll();
     }
     
     return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      isCancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      clearInterval(popupCheckInterval);
+      // Close the popup window if it's still open when component unmounts
+      if (pickerWindowRef.current && !pickerWindowRef.current.closed) {
+        pickerWindowRef.current.close();
+      }
     };
-  }, [sessionId, pickerWindow]);
+  }, [sessionId, isPicking]);
 
   const handleUpload = async () => {
     setUploading(true);
@@ -103,14 +140,22 @@ export default function PhotoGrid() {
         },
         body: JSON.stringify({ photos: selectedPhotos }),
       });
-      const data = await res.json();
+      const data: UploadResult = await res.json();
+      
       if (res.ok) {
-        setUploadResult(`Successfully uploaded ${data.uploaded} out of ${data.total} photos!`);
+        let msg = `Successfully uploaded ${data.uploaded} out of ${data.total} photos!`;
+        if (data.failed && data.failed.length > 0) {
+          msg += ` Failed: ${data.failed.join(', ')}`;
+        }
+        setUploadResult(msg);
         setSelectedPhotos([]); // clear selection
       } else {
-        setUploadResult(`Error: ${data.error}`);
+        // Fallback if data doesn't match expected error shape
+        const errorMsg = (data as unknown as { error?: string }).error || 'Upload failed';
+        setUploadResult(`Error: ${errorMsg}`);
       }
-    } catch (e) {
+    } catch (err) {
+      console.error('Upload error:', err);
       setUploadResult('Upload failed due to network error.');
     }
     setUploading(false);
@@ -129,7 +174,7 @@ export default function PhotoGrid() {
             <FaGoogle /> {loading ? 'Initializing Picker...' : 'Select Photos from Google'}
           </button>
           
-          {pickerWindow && !pickerWindow.closed && (
+          {isPicking && isPopupActive && (
              <p className="mt-4 text-sm text-yellow-300">Waiting for you to finish selecting photos in the popup window...</p>
           )}
         </div>
@@ -137,11 +182,14 @@ export default function PhotoGrid() {
         <div className="glass-panel w-full max-w-lg text-center animate-fade-in">
            <h3 className="text-xl font-bold mb-4">{selectedPhotos.length} Photos Ready</h3>
            <div className="grid grid-cols-4 gap-2 mb-6">
-              {selectedPhotos.slice(0, 4).map(p => (
-                 <div key={p.id} className="aspect-square bg-gray-800 rounded-lg overflow-hidden">
-                    <img src={`${p.mediaFile.baseUrl}=w100-h100-c`} alt="thumbnail" className="w-full h-full object-cover" />
-                 </div>
-              ))}
+              {selectedPhotos.slice(0, 4).map(p => {
+                 const thumbUrl = p.mediaFile ? p.mediaFile.baseUrl : p.baseUrl;
+                 return (
+                   <div key={p.id} className="aspect-square bg-gray-800 rounded-lg overflow-hidden">
+                      <img src={`${thumbUrl}=w100-h100-c`} alt="thumbnail" className="w-full h-full object-cover" />
+                   </div>
+                 );
+              })}
               {selectedPhotos.length > 4 && (
                  <div className="aspect-square flex items-center justify-center text-gray-400 text-xs">
                     +{selectedPhotos.length - 4} more

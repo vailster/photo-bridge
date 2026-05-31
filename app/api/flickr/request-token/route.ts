@@ -13,8 +13,8 @@ export async function GET() {
 
   const oauth = await getFlickrOAuth();
   const url = new URL(request_data.url);
-  const authorized = oauth.authorize(request_data);
-  Object.keys(authorized).forEach((key) => url.searchParams.append(key, (authorized as any)[key]));
+  const authorized = oauth.authorize(request_data) as Record<string, string>;
+  Object.keys(authorized).forEach((key) => url.searchParams.append(key, authorized[key]));
 
   try {
     const response = await fetch(url.toString());

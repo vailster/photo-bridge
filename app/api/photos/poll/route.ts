@@ -16,6 +16,28 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // 1. Check if picking is done via sessions.get
+    const sessionRes = await fetch(`https://photospicker.googleapis.com/v1/sessions/${sessionId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token.accessToken}`,
+      },
+    });
+
+    if (!sessionRes.ok) {
+      const errorBody = await sessionRes.text();
+      console.error('Google Session API Error:', errorBody);
+      throw new Error(`Google API error checking session: ${sessionRes.statusText} - ${errorBody}`);
+    }
+
+    const sessionData = await sessionRes.json();
+    
+    // If user hasn't finished picking yet
+    if (!sessionData.mediaItemsSet) {
+      return NextResponse.json({ status: 'picking' }, { status: 202 });
+    }
+
+    // 2. Selection complete, now fetch the media items
     const response = await fetch(`https://photospicker.googleapis.com/v1/mediaItems?sessionId=${sessionId}`, {
       method: 'GET',
       headers: {
@@ -25,14 +47,15 @@ export async function GET(req: NextRequest) {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error('Google API Error Response:', errorBody);
-      throw new Error(`Google API error: ${response.statusText} - ${errorBody}`);
+      console.error('Google MediaItems API Error:', errorBody);
+      throw new Error(`Google API error fetching items: ${response.statusText} - ${errorBody}`);
     }
 
     const data = await response.json();
     return NextResponse.json(data);
-  } catch (error: any) {
-    console.error('Error fetching picker media items:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error in picker poll:', error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

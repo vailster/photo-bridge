@@ -31,9 +31,9 @@ export async function GET(req: NextRequest) {
   const authorized = oauth.authorize(request_data, {
     key: oauth_token,
     secret: request_token_secret,
-  });
+  }) as Record<string, string>;
   
-  Object.keys(authorized).forEach((key) => url.searchParams.append(key, (authorized as any)[key]));
+  Object.keys(authorized).forEach((key) => url.searchParams.append(key, authorized[key]));
 
   try {
     const response = await fetch(url.toString());

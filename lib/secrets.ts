@@ -1,6 +1,16 @@
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 
-const client = new SecretManagerServiceClient();
+// Singleton pattern to prevent multiple clients in HMR
+const globalForSecrets = global as unknown as { 
+  secretManagerClient: SecretManagerServiceClient | undefined 
+};
+
+const client = globalForSecrets.secretManagerClient ?? new SecretManagerServiceClient();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForSecrets.secretManagerClient = client;
+}
+
 const PROJECT_ID = 'photos-to-flickr-exporter';
 
 const secretCache: Record<string, string> = {};

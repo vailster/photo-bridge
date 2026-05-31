@@ -10,8 +10,6 @@
   },
   "dependencies": {
     "@google-cloud/secret-manager": "^6.1.2",
-    "@types/crypto-js": "^4.2.2",
-    "crypto-js": "^4.2.0",
     "flickr-sdk": "^7.1.0",
     "framer-motion": "^12.38.0",
     "next": "16.2.6",

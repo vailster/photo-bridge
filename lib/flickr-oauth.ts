@@ -1,5 +1,5 @@
 import OAuth from 'oauth-1.0a';
-import crypto from 'crypto-js';
+import crypto from 'node:crypto';
 import { getSecret } from './secrets';
 
 export async function getFlickrOAuth() {
@@ -13,7 +13,10 @@ export async function getFlickrOAuth() {
     },
     signature_method: 'HMAC-SHA1',
     hash_function(base_string, key) {
-      return crypto.HmacSHA1(base_string, key).toString(crypto.enc.Base64);
+      return crypto
+        .createHmac('sha1', key)
+        .update(base_string)
+        .digest('base64');
     },
   });
 }

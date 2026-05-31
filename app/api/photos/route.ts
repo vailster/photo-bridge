@@ -28,8 +28,9 @@ export async function POST(req: NextRequest) {
     const data = await response.json();
     // data should contain { id, pickerUri }
     return NextResponse.json(data);
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error creating picker session:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
