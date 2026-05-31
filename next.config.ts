@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   // @ts-expect-error - turbopack property is not in current NextConfig type but is supported in this version
   turbopack: {
     root: process.cwd(),

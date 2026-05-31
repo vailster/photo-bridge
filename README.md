@@ -18,6 +18,7 @@ A modern web application built with Next.js to seamlessly export your Google Pho
 - **Icons:** React Icons (FaGoogle, FaFlickr)
 - **Authentication:** Next-Auth (Google) + Custom Flickr OAuth 1.0a
 - **Cloud Services:** Google Secret Manager (for secure credential storage)
+- **Infrastructure:** Docker, Google Cloud Run, Google Cloud Build
 
 ## 📋 Prerequisites
 
@@ -65,6 +66,13 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## 🚢 Deployment
+
+This project is optimized for deployment to **Google Cloud Run** using Docker and Next.js standalone mode.
+
+- **GCP Deployment Guide:** See [GCP_DEPLOYMENT.md](./GCP_DEPLOYMENT.md) for step-by-step instructions.
+- **Quick Deploy Script:** Use `./deploy-gcp.sh` to build and deploy to your GCP project.
 
 ## 🏗️ Architecture Notes
 
