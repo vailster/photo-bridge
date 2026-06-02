@@ -46,6 +46,17 @@ Update your API provider settings to allow the production domain:
 #### Flickr Developer Portal
 - **Callback URL**: `https://<YOUR-APP-URL>/api/flickr/callback`
 
+### 4. Google OAuth Consent Screen Setup
+For personal or private use, it is highly recommended to keep your GCP OAuth Consent Screen in **Testing** mode instead of publishing it to production (public):
+* **No Verification Overhead**: You do not need to submit the app to Google for review, set up domain verification, or configure a public privacy policy.
+* **No Warning Screens**: Users added as Test Users can log in directly without seeing any "Unverified App" warning screens.
+* **Configuration Steps**:
+  1. Go to the **OAuth consent screen** page in your Google Cloud Console.
+  2. Ensure the publishing status is set to **Testing** (if it is set to "In Production", click **Back to testing**).
+  3. Under the **Test users** section, click **Add Users** and input your Google account email(s).
+  4. Click **Save**.
+
+
 ## 🛠️ Maintenance & Troubleshooting
 
 ### Updating the App
