@@ -57,9 +57,22 @@ You can view application logs directly in the Cloud Run console under the "Logs"
 gcloud logs read --service google-photos-to-flickr
 ```
 
+### Common Errors & Solutions
+
+#### 1. `PERMISSION_DENIED: The caller does not have permission` during Cloud Build
+* **Cause**: This usually happens if the Cloud Build API (`cloudbuild.googleapis.com`) was just enabled. Google Cloud takes a couple of minutes to propagate permissions and finalize API registration.
+* **Solution**: Wait 1–2 minutes and re-run `./deploy-gcp.sh`.
+
+#### 2. `Error fetching secret ... from GSM` (at runtime)
+* **Cause**: The Cloud Run service account does not have permission to access secrets in Google Secret Manager, or the secrets are not yet created in the project.
+* **Solution**: 
+  1. Grant the **Secret Manager Secret Accessor** role (`roles/secretmanager.secretAccessor`) to the Cloud Run service account (usually the `Default Compute Service Account` unless customized).
+  2. Verify that the secrets (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FLICKR_API_KEY`, `FLICKR_API_SECRET`, and `NEXTAUTH_SECRET`) exist in the **Secret Manager** page in the GCP Console under the exact names used by your app.
+
 ### Local Testing with Docker
 To test the production container locally:
 ```bash
 docker build -t photos-to-flickr .
 docker run -p 3000:3000 photos-to-flickr
 ```
+

@@ -7,11 +7,19 @@ SERVICE_NAME="google-photos-to-flickr"
 
 echo "🚀 Starting deployment to Google Cloud Run..."
 
-# 1. Build and Submit to Google Cloud Build
+# Set active project
+gcloud config set project $PROJECT_ID
+
+# 1. Enable required APIs pre-emptively
+echo "🔑 Enabling required Google Cloud APIs (Cloud Build & Cloud Run)..."
+echo "Note: If these APIs were just enabled, it may take 1-2 minutes for permissions to propagate. If you get a PERMISSION_DENIED error next, please wait a minute and rerun the script."
+gcloud services enable cloudbuild.googleapis.com run.googleapis.com --project=$PROJECT_ID
+
+# 2. Build and Submit to Google Cloud Build
 echo "📦 Building container image..."
 gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE_NAME
 
-# 2. Deploy to Cloud Run
+# 3. Deploy to Cloud Run
 echo "🌍 Deploying to Cloud Run..."
 gcloud run deploy $SERVICE_NAME \
   --image gcr.io/$PROJECT_ID/$SERVICE_NAME \
@@ -21,3 +29,4 @@ gcloud run deploy $SERVICE_NAME \
   --set-env-vars="NODE_ENV=production"
 
 echo "✅ Deployment complete!"
+
