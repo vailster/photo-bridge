@@ -4,6 +4,7 @@
 PROJECT_ID="photos-to-flickr-exporter"
 REGION="us-central1"
 SERVICE_NAME="google-photos-to-flickr"
+NEXTAUTH_URL="https://google-photos-to-flickr-50155018958.us-central1.run.app"
 
 echo "🚀 Starting deployment to Google Cloud Run..."
 
@@ -26,7 +27,8 @@ gcloud run deploy $SERVICE_NAME \
   --platform managed \
   --region $REGION \
   --allow-unauthenticated \
-  --set-env-vars="NODE_ENV=production"
+  --set-env-vars="NODE_ENV=production,NEXTAUTH_URL=$NEXTAUTH_URL"
+
 
 echo "✅ Deployment complete!"
 
