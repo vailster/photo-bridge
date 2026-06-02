@@ -40,6 +40,13 @@ export async function POST(req: NextRequest) {
         console.log(`[Upload] Starting transfer for: ${filename}`);
         // 1. Download from Google
         const baseUrl = photo.mediaFile ? photo.mediaFile.baseUrl : photo.baseUrl;
+        
+        // SSRF Mitigation: Validate that the URL is a trusted Google Photos media host
+        const parsedUrl = new URL(baseUrl);
+        if (parsedUrl.hostname !== 'googleusercontent.com' && !parsedUrl.hostname.endsWith('.googleusercontent.com')) {
+          throw new Error(`Forbidden media URL host: ${parsedUrl.hostname}`);
+        }
+
         const photoRes = await fetch(`${baseUrl}=d`, {
           headers: {
             Authorization: `Bearer ${googleAccessToken}`,

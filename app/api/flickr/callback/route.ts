@@ -64,12 +64,14 @@ export async function GET(req: NextRequest) {
     cookieStore.set('flickr_access_token', access_token, {
       httpOnly: true,
       secure: isSecure,
+      sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 30, // 30 days
       path: '/',
     });
     cookieStore.set('flickr_access_token_secret', access_token_secret, {
       httpOnly: true,
       secure: isSecure,
+      sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 30, // 30 days
       path: '/',
     });
@@ -78,6 +80,7 @@ export async function GET(req: NextRequest) {
       cookieStore.set('flickr_username', decodeURIComponent(username), {
         httpOnly: true,
         secure: isSecure,
+        sameSite: 'lax',
         maxAge: 60 * 60 * 24 * 30, // 30 days
         path: '/',
       });
