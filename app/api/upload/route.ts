@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getToken } from 'next-auth/jwt';
+import { getSecret } from '@/lib/secrets';
 import { getFlickrOAuth } from '@/lib/flickr-oauth';
 import { GoogleMediaItem } from '@/types/photos';
 
@@ -11,6 +13,12 @@ export async function POST(req: NextRequest) {
     if (!photos || photos.length === 0) {
       return NextResponse.json({ error: 'No photos provided' }, { status: 400 });
     }
+
+    const token = await getToken({ req, secret: await getSecret("NEXTAUTH_SECRET") });
+    if (!token || !token.accessToken) {
+      return NextResponse.json({ error: 'Unauthorized (Google)' }, { status: 401 });
+    }
+    const googleAccessToken = token.accessToken as string;
 
     const cookieStore = await cookies();
     const access_token = cookieStore.get('flickr_access_token')?.value;
@@ -27,16 +35,39 @@ export async function POST(req: NextRequest) {
     // Helper to upload a single photo
     const uploadPhoto = async (photo: GoogleMediaItem) => {
       const filename = photo.mediaFile ? photo.mediaFile.filename : photo.filename;
+      const startTime = Date.now();
       try {
+        console.log(`[Upload] Starting transfer for: ${filename}`);
         // 1. Download from Google
         const baseUrl = photo.mediaFile ? photo.mediaFile.baseUrl : photo.baseUrl;
-        const photoRes = await fetch(`${baseUrl}=d`);
+        const photoRes = await fetch(`${baseUrl}=d`, {
+          headers: {
+            Authorization: `Bearer ${googleAccessToken}`,
+          },
+        });
         
         if (!photoRes.ok || !photoRes.body) {
+          if (photoRes.body) {
+            try {
+              await photoRes.body.cancel();
+            } catch {}
+          }
           throw new Error(`Google fetch failed: ${photoRes.statusText}`);
         }
         
-        const buffer = await photoRes.arrayBuffer();
+        let buffer;
+        try {
+          buffer = await photoRes.arrayBuffer();
+        } catch (err) {
+          if (photoRes.body) {
+            try {
+              await photoRes.body.cancel();
+            } catch {}
+          }
+          throw err;
+        }
+
+        console.log(`[Upload] Downloaded ${filename} (${buffer.byteLength} bytes) from Google in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
         // 2. Upload to Flickr
         const uploadUrl = 'https://up.flickr.com/services/upload/';
@@ -49,7 +80,7 @@ export async function POST(req: NextRequest) {
         const authorized = oauth.authorize(request_data, {
           key: access_token,
           secret: access_token_secret
-        }) as Record<string, string>;
+        }) as unknown as Record<string, string>;
 
         const formData = new FormData();
         Object.keys(authorized).forEach((key) => {
@@ -57,21 +88,34 @@ export async function POST(req: NextRequest) {
         });
         formData.append('photo', new Blob([buffer]), filename);
 
+        const flickrUploadStart = Date.now();
         const flickrRes = await fetch(uploadUrl, {
           method: 'POST',
           body: formData,
         });
 
-        const xmlText = await flickrRes.text();
+        let xmlText = '';
+        try {
+          xmlText = await flickrRes.text();
+        } catch (err) {
+          if (flickrRes.body) {
+            try {
+              await flickrRes.body.cancel();
+            } catch {}
+          }
+          throw err;
+        }
+
         if (xmlText.includes('<photoid>')) {
           uploadedCount++;
+          console.log(`[Upload] Successfully uploaded ${filename} to Flickr in ${((Date.now() - flickrUploadStart) / 1000).toFixed(2)}s. Total time: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
         } else {
-          console.error(`Flickr upload error for ${filename}:`, xmlText);
+          console.error(`[Upload] Flickr upload error for ${filename}:`, xmlText);
           failed.push(filename);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        console.error(`Upload task failed for ${filename}:`, message);
+        console.error(`[Upload] Task failed for ${filename}:`, message);
         failed.push(filename);
       }
     };

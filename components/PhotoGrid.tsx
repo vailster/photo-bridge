@@ -2,9 +2,55 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { FaGoogle, FaFlickr } from 'react-icons/fa';
+import { useSession, signIn } from 'next-auth/react';
 import { GoogleMediaItem, UploadResult } from '@/types/photos';
 
+function GoogleImage({ src, accessToken, alt, className }: { src: string; accessToken: string; alt: string; className?: string }) {
+  const [imageSrc, setImageSrc] = useState<string>('');
+
+  useEffect(() => {
+    let isCancelled = false;
+    let objectUrl = '';
+
+    const loadImage = async () => {
+      try {
+        const res = await fetch(src, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        if (!res.ok) throw new Error('Failed to fetch image');
+        const blob = await res.blob();
+        if (isCancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setImageSrc(objectUrl);
+      } catch (err) {
+        console.error('Error loading Google Photos image:', err);
+      }
+    };
+
+    if (src && accessToken) {
+      loadImage();
+    }
+
+    return () => {
+      isCancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [src, accessToken]);
+
+  if (!imageSrc) {
+    return <div className="w-full h-full bg-gray-800 animate-pulse flex items-center justify-center text-xs text-gray-500">Loading...</div>;
+  }
+
+  return <img src={imageSrc} alt={alt} className={className} />;
+}
+
 export default function PhotoGrid() {
+  const { data: session } = useSession();
+  const googleAccessToken = session?.accessToken as string;
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const pickerWindowRef = useRef<Window | null>(null);
@@ -13,12 +59,41 @@ export default function PhotoGrid() {
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [selectedPhotos, setSelectedPhotos] = useState<GoogleMediaItem[]>([]);
   const [isPopupActive, setIsPopupActive] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    status: 'idle' | 'uploading' | 'completed' | 'error';
+    total: number;
+    uploaded: number;
+    failed: string[];
+    currentPhotoName: string;
+  }>({
+    status: 'idle',
+    total: 0,
+    uploaded: 0,
+    failed: [],
+    currentPhotoName: ''
+  });
 
   const startPicker = async () => {
     setLoading(true);
     setUploadResult(null);
+    setUploadProgress({
+      status: 'idle',
+      total: 0,
+      uploaded: 0,
+      failed: [],
+      currentPhotoName: ''
+    });
     try {
       const res = await fetch('/api/photos', { method: 'POST' });
+      
+      if (res.status === 401) {
+        setUploadResult("Google connection expired. Redirecting to sign in...");
+        setTimeout(() => {
+          signIn('google');
+        }, 1500);
+        return;
+      }
+
       const data = await res.json();
       
       if (!res.ok) {
@@ -53,9 +128,20 @@ export default function PhotoGrid() {
   };
 
 
+  // Close the popup window if the component unmounts
+  useEffect(() => {
+    return () => {
+      if (pickerWindowRef.current && !pickerWindowRef.current.closed) {
+        pickerWindowRef.current.close();
+      }
+    };
+  }, []);
+
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
     let isCancelled = false;
+    let closedWindowPollCount = 0;
+    const MAX_CLOSED_WINDOW_POLLS = 100; // allow up to 100 polls (5 minutes) after window is closed to support large selections
 
     // Check popup status every second
     const popupCheckInterval = setInterval(() => {
@@ -73,11 +159,23 @@ export default function PhotoGrid() {
         // Check if cancelled after the async operation
         if (isCancelled) return;
 
+        if (res.status === 401) {
+           setIsPicking(false);
+           setUploadResult("Google connection expired. Redirecting to sign in...");
+           setTimeout(() => {
+             signIn('google');
+           }, 1500);
+           return;
+        }
+
         if (res.status === 202) {
            if (pickerWindowRef.current?.closed) {
-              setIsPicking(false);
-              setUploadResult('Picker window was closed before selection was complete.');
-              return;
+              closedWindowPollCount++;
+              if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
+                 setIsPicking(false);
+                 setUploadResult('Selection timed out or was cancelled. Please try again.');
+                 return;
+              }
            }
            timeoutId = setTimeout(poll, 3000);
            return;
@@ -89,25 +187,35 @@ export default function PhotoGrid() {
         if (isCancelled) return;
 
         if (res.ok && data.mediaItems && data.mediaItems.length > 0) {
-          setIsPicking(false);
-          setSelectedPhotos(data.mediaItems);
-          setUploadResult(`You selected ${data.mediaItems.length} photos! Ready to upload.`);
+           setIsPicking(false);
+           setSelectedPhotos(data.mediaItems);
+           setUploadResult(`You selected ${data.mediaItems.length} photos! Ready to upload.`);
         } else if (res.ok) {
-          setIsPicking(false);
-          setUploadResult(`Selection finished but no photos found. Raw data: ${JSON.stringify(data)}`);
+           setIsPicking(false);
+           setUploadResult(`Selection finished but no photos found. Raw data: ${JSON.stringify(data)}`);
         } else {
-          if (pickerWindowRef.current?.closed) {
-             setIsPicking(false);
-             setUploadResult(`Error fetching selection: ${data.error || 'Unknown error'}`);
-          } else {
-             timeoutId = setTimeout(poll, 3000);
-          }
+           if (pickerWindowRef.current?.closed) {
+              closedWindowPollCount++;
+              if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
+                 setIsPicking(false);
+                 setUploadResult(`Error fetching selection: ${data.error || 'Unknown error'}`);
+              } else {
+                 timeoutId = setTimeout(poll, 3000);
+              }
+           } else {
+              timeoutId = setTimeout(poll, 3000);
+           }
         }
       } catch (e) {
          if (isCancelled) return;
          console.error("Polling error:", e);
          if (pickerWindowRef.current?.closed) {
-           setIsPicking(false);
+           closedWindowPollCount++;
+           if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
+             setIsPicking(false);
+           } else {
+             timeoutId = setTimeout(poll, 3000);
+           }
          } else {
            timeoutId = setTimeout(poll, 3000);
          }
@@ -122,50 +230,134 @@ export default function PhotoGrid() {
       isCancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
       clearInterval(popupCheckInterval);
-      // Close the popup window if it's still open when component unmounts
-      if (pickerWindowRef.current && !pickerWindowRef.current.closed) {
-        pickerWindowRef.current.close();
-      }
     };
   }, [sessionId, isPicking]);
 
-  const handleUpload = async () => {
+  const runUploadQueue = async (photosToUpload: GoogleMediaItem[]) => {
     setUploading(true);
-    setUploadResult('Uploading to Flickr...');
-    try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ photos: selectedPhotos }),
-      });
-      const data: UploadResult = await res.json();
-      
-      if (res.ok) {
-        let msg = `Successfully uploaded ${data.uploaded} out of ${data.total} photos!`;
-        if (data.failed && data.failed.length > 0) {
-          msg += ` Failed: ${data.failed.join(', ')}`;
+    setUploadResult(null);
+    
+    const total = photosToUpload.length;
+    let uploadedCount = 0;
+    const failedList: string[] = [];
+
+    setUploadProgress({
+      status: 'uploading',
+      total,
+      uploaded: 0,
+      failed: [],
+      currentPhotoName: ''
+    });
+
+    const queue = [...photosToUpload];
+    const CONCURRENCY = 2; // Concurrency limit of 2 parallel uploads
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        const photo = queue.shift();
+        if (!photo) break;
+
+        const filename = photo.mediaFile ? photo.mediaFile.filename : photo.filename;
+        setUploadProgress(prev => ({
+          ...prev,
+          currentPhotoName: filename
+        }));
+
+        try {
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ photos: [photo] }),
+          });
+
+          if (res.status === 401) {
+            setUploadProgress(prev => ({
+              ...prev,
+              status: 'error'
+            }));
+            setUploadResult("Google connection expired. Redirecting to sign in...");
+            setTimeout(() => {
+              signIn('google');
+            }, 1500);
+            return;
+          }
+
+          if (!res.ok) {
+            throw new Error(`Upload failed: status ${res.status}`);
+          }
+
+          const data: UploadResult = await res.json();
+          if (data.uploaded > 0) {
+            uploadedCount++;
+            setUploadProgress(prev => ({
+              ...prev,
+              uploaded: prev.uploaded + 1
+            }));
+          } else {
+            failedList.push(filename);
+            setUploadProgress(prev => ({
+              ...prev,
+              failed: [...prev.failed, filename]
+            }));
+          }
+        } catch (err) {
+          console.error(`Upload error for ${filename}:`, err);
+          failedList.push(filename);
+          setUploadProgress(prev => ({
+            ...prev,
+            failed: [...prev.failed, filename]
+          }));
         }
-        setUploadResult(msg);
-        setSelectedPhotos([]); // clear selection
-      } else {
-        // Fallback if data doesn't match expected error shape
-        const errorMsg = (data as unknown as { error?: string }).error || 'Upload failed';
-        setUploadResult(`Error: ${errorMsg}`);
       }
-    } catch (err) {
-      console.error('Upload error:', err);
-      setUploadResult('Upload failed due to network error.');
-    }
+    };
+
+    const workers = Array(Math.min(CONCURRENCY, queue.length))
+      .fill(null)
+      .map(() => worker());
+
+    await Promise.all(workers);
+
+    setUploadProgress(prev => ({
+      ...prev,
+      status: 'completed',
+      currentPhotoName: ''
+    }));
+    
     setUploading(false);
   };
 
+  const handleUpload = async () => {
+    await runUploadQueue(selectedPhotos);
+  };
+
+  const handleRetryFailed = async () => {
+    const failedPhotos = selectedPhotos.filter(p => {
+      const filename = p.mediaFile ? p.mediaFile.filename : p.filename;
+      return uploadProgress.failed.includes(filename);
+    });
+    if (failedPhotos.length > 0) {
+      await runUploadQueue(failedPhotos);
+    }
+  };
+
+  const handleDone = () => {
+    setSelectedPhotos([]);
+    setUploadProgress({
+      status: 'idle',
+      total: 0,
+      uploaded: 0,
+      failed: [],
+      currentPhotoName: ''
+    });
+  };
+
   return (
-    <div className="flex flex-col items-center gap-6 mt-8">
+    <div className="w-full mt-2">
       {!selectedPhotos.length ? (
-        <div className="glass-panel w-full max-w-lg text-center animate-fade-in">
-          <p className="mb-6">Click the button below to securely open Google Photos and select the images you want to export.</p>
+        <div className="picker-container">
+          <p className="picker-text">Open your Google Photos library to select the images you want to transfer.</p>
           <button 
             className={`btn btn-google w-full ${loading ? 'btn-disabled' : ''}`}
             onClick={startPicker}
@@ -175,41 +367,137 @@ export default function PhotoGrid() {
           </button>
           
           {isPicking && isPopupActive && (
-             <p className="mt-4 text-sm text-yellow-300">Waiting for you to finish selecting photos in the popup window...</p>
+             <p className="mt-5 text-sm text-yellow-500 animate-pulse">Waiting for selection in popup window...</p>
+          )}
+
+          {isPicking && !isPopupActive && (
+             <p className="mt-5 text-sm text-blue-400 animate-pulse">Processing selection (this can take up to a minute for large batches)...</p>
+          )}
+
+          {uploadResult && !isPicking && (
+             <div className="status-success-card">
+                {uploadResult}
+             </div>
           )}
         </div>
       ) : (
-        <div className="glass-panel w-full max-w-lg text-center animate-fade-in">
-           <h3 className="text-xl font-bold mb-4">{selectedPhotos.length} Photos Ready</h3>
-           <div className="grid grid-cols-4 gap-2 mb-6">
-              {selectedPhotos.slice(0, 4).map(p => {
-                 const thumbUrl = p.mediaFile ? p.mediaFile.baseUrl : p.baseUrl;
-                 return (
-                   <div key={p.id} className="aspect-square bg-gray-800 rounded-lg overflow-hidden">
-                      <img src={`${thumbUrl}=w100-h100-c`} alt="thumbnail" className="w-full h-full object-cover" />
-                   </div>
-                 );
-              })}
-              {selectedPhotos.length > 4 && (
-                 <div className="aspect-square flex items-center justify-center text-gray-400 text-xs">
-                    +{selectedPhotos.length - 4} more
+        <div className="preview-container">
+           {uploadProgress.status === 'idle' && (
+             <>
+               <div className="transfer-status-row">
+                  <span className="text-sm text-gray-400">Ready to transfer:</span>
+                  <span className="flickr-badge">{selectedPhotos.length} {selectedPhotos.length === 1 ? 'photo' : 'photos'}</span>
+               </div>
+               
+               <div className="thumbnail-grid">
+                  {selectedPhotos.slice(0, 4).map(p => {
+                     const thumbUrl = p.mediaFile ? p.mediaFile.baseUrl : p.baseUrl;
+                     return (
+                        <div key={p.id} className="thumbnail-item">
+                           <GoogleImage 
+                             src={`${thumbUrl}=w100-h100-c`} 
+                             accessToken={googleAccessToken} 
+                             alt="thumbnail" 
+                           />
+                        </div>
+                     );
+                  })}
+                  {selectedPhotos.length > 4 && (
+                     <div className="aspect-square flex items-center justify-center bg-gray-900/60 rounded-lg border border-gray-800 text-gray-400 text-sm font-semibold">
+                        +{selectedPhotos.length - 4}
+                     </div>
+                  )}
+               </div>
+               
+               {uploadResult && (
+                 <div className="status-success-card">
+                   {uploadResult}
                  </div>
-              )}
-           </div>
-           
-           <button 
-              className={`btn btn-flickr w-full ${uploading ? 'btn-disabled' : ''}`}
-              onClick={handleUpload}
-              disabled={uploading}
-            >
-              <FaFlickr /> {uploading ? 'Uploading...' : 'Confirm Upload to Flickr'}
-            </button>
-        </div>
-      )}
+               )}
+               
+               <button 
+                  className={`btn btn-flickr w-full glowing-btn ${uploading ? 'btn-disabled' : ''}`}
+                  onClick={handleUpload}
+                  disabled={uploading}
+                >
+                  <FaFlickr /> {uploading ? 'Uploading to Flickr...' : 'Confirm Upload to Flickr'}
+                </button>
+             </>
+           )}
 
-      {uploadResult && (
-        <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 glass-panel animate-fade-in bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg z-50 whitespace-nowrap">
-          {uploadResult}
+           {uploadProgress.status === 'uploading' && (
+             <div className="progress-card">
+               <div className="progress-title">Transferring to Flickr...</div>
+               <div className="progress-bar-container">
+                 <div 
+                   className="progress-bar-fill" 
+                   style={{ width: `${(uploadProgress.uploaded / uploadProgress.total) * 100}%` }}
+                 ></div>
+               </div>
+               <div className="progress-status-text font-medium text-slate-300">
+                 Transferred {uploadProgress.uploaded} of {uploadProgress.total} photos
+               </div>
+               {uploadProgress.currentPhotoName && (
+                 <div className="text-xs text-gray-500 mt-3 truncate w-full px-4">
+                   Uploading: {uploadProgress.currentPhotoName}
+                 </div>
+               )}
+               {uploadProgress.failed.length > 0 && (
+                 <div className="text-xs text-red-400 mt-2 font-semibold animate-pulse">
+                   {uploadProgress.failed.length} failed
+                 </div>
+               )}
+             </div>
+           )}
+
+           {uploadProgress.status === 'completed' && (
+             <div className="progress-card">
+               <div className="progress-title">
+                 {uploadProgress.failed.length === 0 ? 'Transfer Complete! 🎉' : 'Transfer Completed with Errors ⚠️'}
+               </div>
+               
+               <div className="progress-bar-container">
+                 <div 
+                   className="progress-bar-fill" 
+                   style={{ width: '100%' }}
+                 ></div>
+               </div>
+
+               <div className="progress-status-text font-medium text-slate-300">
+                 {uploadProgress.failed.length === 0 
+                   ? `Successfully transferred all ${uploadProgress.total} photos!` 
+                   : `Transferred ${uploadProgress.uploaded} of ${uploadProgress.total} photos (${uploadProgress.failed.length} failed)`}
+               </div>
+
+               {uploadProgress.failed.length > 0 && (
+                 <div className="failed-photos-list">
+                   <div className="failed-photos-list-title">Failed Uploads</div>
+                   {uploadProgress.failed.map((filename, idx) => (
+                     <div key={idx} className="failed-photo-item" title={filename}>
+                       • {filename}
+                     </div>
+                   ))}
+                 </div>
+               )}
+
+               <div className="flex flex-col gap-3 mt-6">
+                 {uploadProgress.failed.length > 0 && (
+                   <button 
+                     className="btn btn-flickr w-full glowing-btn"
+                     onClick={handleRetryFailed}
+                   >
+                     Retry Failed ({uploadProgress.failed.length})
+                   </button>
+                 )}
+                 <button 
+                   className="btn btn-gray w-full"
+                   onClick={handleDone}
+                 >
+                   Done
+                 </button>
+               </div>
+             </div>
+            )}
         </div>
       )}
     </div>

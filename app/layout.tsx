@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Photos to Flickr",
-  description: "Export your Google Photos directly to Flickr.",
+  title: "PhotoBridge",
+  description: "Seamlessly export your Google Photos directly to Flickr.",
 };
 
 import { Providers } from "./providers";

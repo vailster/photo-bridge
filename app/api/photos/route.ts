@@ -20,12 +20,36 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      const errorBody = await response.text();
+      let errorBody = '';
+      try {
+        errorBody = await response.text();
+      } catch {
+        if (response.body) {
+          try {
+            await response.body.cancel();
+          } catch {}
+        }
+      }
       console.error('Google API Error Response:', errorBody);
+      if (response.status === 401) {
+        return NextResponse.json({ 
+          error: 'Your Google connection has expired. Please sign out (Disconnect Google) and connect again to refresh your credentials.' 
+        }, { status: 401 });
+      }
       throw new Error(`Google API error: ${response.statusText} - ${errorBody}`);
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      if (response.body) {
+        try {
+          await response.body.cancel();
+        } catch {}
+      }
+      throw e;
+    }
     // data should contain { id, pickerUri }
     return NextResponse.json(data);
   } catch (error) {

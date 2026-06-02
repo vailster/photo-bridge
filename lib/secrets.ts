@@ -5,10 +5,11 @@ const globalForSecrets = global as unknown as {
   secretManagerClient: SecretManagerServiceClient | undefined 
 };
 
-const client = globalForSecrets.secretManagerClient ?? new SecretManagerServiceClient();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForSecrets.secretManagerClient = client;
+function getClient(): SecretManagerServiceClient {
+  if (!globalForSecrets.secretManagerClient) {
+    globalForSecrets.secretManagerClient = new SecretManagerServiceClient();
+  }
+  return globalForSecrets.secretManagerClient;
 }
 
 const PROJECT_ID = 'photos-to-flickr-exporter';
@@ -24,15 +25,17 @@ export async function getSecret(name: string): Promise<string> {
     return secretCache[name];
   }
 
-  console.log(`[Secrets] Fetching secret: ${name}`);
-
-  // If we're in development and the secret is in process.env, use it.
-  if (process.env.NODE_ENV === 'development' && process.env[name]) {
+  // Check process.env first (for local development/testing)
+  if (process.env[name]) {
     console.log(`[Secrets] Found ${name} in process.env`);
-    return process.env[name] as string;
+    secretCache[name] = process.env[name] as string;
+    return secretCache[name];
   }
 
+  console.log(`[Secrets] Fetching secret ${name} from Google Secret Manager`);
+
   try {
+    const client = getClient();
     const [version] = await client.accessSecretVersion({
       name: `projects/${PROJECT_ID}/secrets/${name}/versions/latest`,
     });
@@ -46,12 +49,6 @@ export async function getSecret(name: string): Promise<string> {
     return payload;
   } catch (error) {
     console.error(`Error fetching secret ${name} from GSM:`, error);
-    
-    // Final fallback to process.env if GSM fails
-    if (process.env[name]) {
-      return process.env[name] as string;
-    }
-    
     return '';
   }
 }

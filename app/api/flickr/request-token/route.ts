@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getFlickrOAuth } from '@/lib/flickr-oauth';
 import { cookies } from 'next/headers';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const isSecure = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
+  
   const request_data = {
     url: 'https://www.flickr.com/services/oauth/request_token',
     method: 'GET',
@@ -13,12 +15,22 @@ export async function GET() {
 
   const oauth = await getFlickrOAuth();
   const url = new URL(request_data.url);
-  const authorized = oauth.authorize(request_data) as Record<string, string>;
+  const authorized = oauth.authorize(request_data) as unknown as Record<string, string>;
   Object.keys(authorized).forEach((key) => url.searchParams.append(key, authorized[key]));
 
   try {
     const response = await fetch(url.toString());
-    const data = await response.text();
+    let data;
+    try {
+      data = await response.text();
+    } catch (e) {
+      if (response.body) {
+        try {
+          await response.body.cancel();
+        } catch {}
+      }
+      throw e;
+    }
     const params = new URLSearchParams(data);
     
     const oauth_token = params.get('oauth_token');
@@ -32,7 +44,7 @@ export async function GET() {
     const cookieStore = await cookies();
     cookieStore.set('flickr_request_token_secret', oauth_token_secret, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       maxAge: 60 * 10, // 10 minutes
       path: '/',
     });

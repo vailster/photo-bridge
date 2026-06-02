@@ -1,4 +1,4 @@
-# Google Photos to Flickr Exporter
+# PhotoBridge
 
 A modern web application built with Next.js to seamlessly export your Google Photos directly to your Flickr photostream.
 
@@ -6,8 +6,10 @@ A modern web application built with Next.js to seamlessly export your Google Pho
 
 - **Google Photos Picker Integration:** Securely browse and select photos using the official Google Photos Picker API.
 - **Flickr OAuth Integration:** Simple authentication flow to connect your Flickr account.
-- **Concurrent Batch Uploads:** Intelligent parallel processing (3 concurrent tasks) to ensure fast uploads without hitting rate limits or server timeouts.
-- **Memory Efficient:** Optimized for performance with singleton patterns for cloud service clients and robust cleanup of background polling and popup windows.
+- **Fault-Tolerant Client-Side Queue:** Uploads photos concurrently (concurrency limit of 2) with a beautiful glowing progress bar, displaying real-time statistics (transferred count, remaining items, current filename, and errors). 
+- **Retry Mechanisms:** If any uploads fail due to transient network issues, PhotoBridge isolates them and provides a one-click "Retry Failed" action to re-run only those files.
+- **Auto Re-authentication:** Automatically detects Google OAuth token expiration (401 status) during session checks, photo polling, or transfers, alerting the user and redirecting them to Google login after 1.5 seconds.
+- **Memory Efficient:** Optimized for performance with singleton patterns for cloud service clients and robust cleanup of background polling, popup windows, and streams.
 - **Type Safe:** Fully typed with TypeScript, ensuring reliability and maintainability.
 - **Native Security:** Uses Node.js native `crypto` module for high-performance OAuth signing.
 
@@ -76,6 +78,7 @@ This project is optimized for deployment to **Google Cloud Run** using Docker an
 
 ## 🏗️ Architecture Notes
 
+- **Asset Serving in Standalone Mode:** The local build script automatically handles copying the assets (`public` and `.next/static`) into the standalone directory, ensuring seamless local production runs.
 - **Secret Management:** The app uses a singleton pattern for the `SecretManagerServiceClient` to prevent connection leakage during development.
 - **Polling Logic:** The picker polling mechanism includes strict cancellation checks to prevent memory leaks and "zombie" background tasks.
 - **Popup Management:** Integrated cleanup logic ensures that OAuth/Picker popups are closed when the main application unmounts.

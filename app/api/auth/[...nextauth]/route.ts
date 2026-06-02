@@ -2,12 +2,23 @@ import NextAuth, { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getSecret } from "@/lib/secrets";
 
+const nextauthUrl = process.env.NEXTAUTH_URL;
+const useSecureCookies = nextauthUrl ? nextauthUrl.startsWith("https://") : false;
+
 const authOptions: NextAuthOptions = {
+  useSecureCookies,
   providers: [
     GoogleProvider({
       clientId: await getSecret("GOOGLE_CLIENT_ID"),
       clientSecret: await getSecret("GOOGLE_CLIENT_SECRET"),
-      authorization: "https://accounts.google.com/o/oauth2/v2/auth?prompt=consent&access_type=offline&response_type=code&scope=openid%20email%20profile%20https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+      authorization: {
+        params: {
+          scope: "openid email profile https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code"
+        }
+      }
     }),
   ],
   secret: (await getSecret("NEXTAUTH_SECRET")) || "some-fallback-secret-for-dev",
