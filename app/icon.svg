@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF0084" /> <!-- Flickr pink -->
+      <stop offset="100%" stop-color="#0063DB" /> <!-- Flickr/Google blue -->
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="32" height="32" rx="8" fill="url(#grad)" />
+  <!-- Camera body -->
+  <path d="M9 11h2l1-2h8l1 2h2a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3z" fill="white" />
+  <!-- Lens outer ring -->
+  <circle cx="16" cy="18" r="4.5" fill="url(#grad)" />
+  <!-- Lens inner glass -->
+  <circle cx="16" cy="18" r="3" fill="white" />
+  <!-- Lens reflection -->
+  <circle cx="17.2" cy="16.8" r="1" fill="url(#grad)" />
+  <!-- Flash light -->
+  <circle cx="23" cy="13" r="1" fill="white" opacity="0.8" />
+</svg>
