@@ -141,7 +141,8 @@ export default function PhotoGrid() {
     let timeoutId: NodeJS.Timeout | null = null;
     let isCancelled = false;
     let closedWindowPollCount = 0;
-    const MAX_CLOSED_WINDOW_POLLS = 100; // allow up to 100 polls (5 minutes) after window is closed to support large selections
+    const MAX_CLOSED_WINDOW_POLLS = 5; // allow up to 5 polls (15 seconds) after window is closed to support large selections
+
 
     // Check popup status every second
     const popupCheckInterval = setInterval(() => {
