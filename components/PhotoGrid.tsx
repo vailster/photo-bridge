@@ -141,7 +141,7 @@ export default function PhotoGrid() {
     let timeoutId: NodeJS.Timeout | null = null;
     let isCancelled = false;
     let closedWindowPollCount = 0;
-    const MAX_CLOSED_WINDOW_POLLS = 5; // allow up to 5 polls (15 seconds) after window is closed to support large selections
+    const MAX_CLOSED_WINDOW_POLLS = 2; // allow up to 2 polls (6 seconds) after window is closed to support large selections
 
 
     // Check popup status every second
@@ -174,7 +174,7 @@ export default function PhotoGrid() {
               closedWindowPollCount++;
               if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
                  setIsPicking(false);
-                 setUploadResult('Selection timed out or was cancelled. Please try again.');
+                 setUploadResult(null);
                  return;
               }
            }
@@ -193,14 +193,14 @@ export default function PhotoGrid() {
            setUploadResult(`You selected ${data.mediaItems.length} photos! Ready to upload.`);
         } else if (res.ok) {
            setIsPicking(false);
-           setUploadResult(`Selection finished but no photos found. Raw data: ${JSON.stringify(data)}`);
+           setUploadResult(null);
         } else {
            if (pickerWindowRef.current?.closed) {
               closedWindowPollCount++;
-              if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
-                 setIsPicking(false);
-                 setUploadResult(`Error fetching selection: ${data.error || 'Unknown error'}`);
-              } else {
+               if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
+                  setIsPicking(false);
+                  setUploadResult(null);
+               } else {
                  timeoutId = setTimeout(poll, 3000);
               }
            } else {
