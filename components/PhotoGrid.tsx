@@ -141,7 +141,7 @@ export default function PhotoGrid() {
     let timeoutId: NodeJS.Timeout | null = null;
     let isCancelled = false;
     let closedWindowPollCount = 0;
-    const MAX_CLOSED_WINDOW_POLLS = 2; // allow up to 2 polls (6 seconds) after window is closed to support large selections
+    const MAX_CLOSED_WINDOW_POLLS = 15; // allow up to 15 polls (45 seconds) after window is closed to support large selections
 
 
     // Check popup status every second
@@ -372,7 +372,18 @@ export default function PhotoGrid() {
           )}
 
           {isPicking && !isPopupActive && (
-             <p className="mt-5 text-sm text-blue-400 animate-pulse">Processing selection (this can take up to a minute for large batches)...</p>
+             <div className="mt-5 flex flex-col items-center gap-3">
+                <p className="text-sm text-blue-400 animate-pulse">Processing selection (this can take up to a minute for large batches)...</p>
+                <button 
+                  className="btn btn-gray text-xs px-3 py-1.5"
+                  onClick={() => {
+                    setIsPicking(false);
+                    setUploadResult(null);
+                  }}
+                >
+                  Cancel & Reset
+                </button>
+             </div>
           )}
 
           {uploadResult && !isPicking && (
