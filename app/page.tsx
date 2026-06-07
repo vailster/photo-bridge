@@ -2,7 +2,7 @@
 
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useState, useEffect } from 'react';
-import { FaGoogle, FaFlickr, FaSignOutAlt } from 'react-icons/fa';
+import { FaGoogle, FaFlickr, FaSignOutAlt, FaGithub } from 'react-icons/fa';
 import PhotoGrid from '@/components/PhotoGrid';
 
 export default function Home() {
@@ -10,21 +10,24 @@ export default function Home() {
   const [hasFlickrToken, setHasFlickrToken] = useState(false);
   const [flickrUsername, setFlickrUsername] = useState<string | null>(null);
 
-  const checkFlickr = async () => {
-    try {
-      const res = await fetch('/api/flickr/status');
-      if (res.ok) {
-        const data = await res.json();
-        setHasFlickrToken(data.connected);
-        setFlickrUsername(data.username);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   useEffect(() => {
+    let active = true;
+    const checkFlickr = async () => {
+      try {
+        const res = await fetch('/api/flickr/status');
+        if (res.ok && active) {
+          const data = await res.json();
+          setHasFlickrToken(data.connected);
+          setFlickrUsername(data.username);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
     checkFlickr();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleFlickrDisconnect = async () => {
@@ -60,7 +63,7 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-1.5 text-green-400 font-semibold">
                 <span className="status-dot glowing !w-1.5 !h-1.5"></span>
-                Flickr
+                Flickr{flickrUsername ? ` (${flickrUsername})` : ''}
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
@@ -130,7 +133,7 @@ export default function Home() {
                   <>
                     <div className="status-pill">
                       <span className="status-dot glowing"></span>
-                      Connected to Flickr
+                      Connected{flickrUsername ? ` as ${flickrUsername}` : ' to Flickr'}
                     </div>
                     <button 
                       className="btn btn-gray text-xs px-4 py-2"
@@ -166,6 +169,21 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      <footer className="mt-16 pt-8 border-t border-gray-800/40 text-center flex flex-col items-center gap-2">
+        <a 
+          href="https://github.com/vailster/photo-bridge" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="inline-flex items-center gap-2 text-gray-500 hover:text-white transition-all text-sm font-medium group"
+        >
+          <FaGithub className="text-lg group-hover:scale-110 transition-transform duration-200" />
+          <span>View on GitHub</span>
+        </a>
+        <p className="text-xs text-gray-600">
+          PhotoBridge &copy; {new Date().getFullYear()}
+        </p>
+      </footer>
     </main>
   );
 }

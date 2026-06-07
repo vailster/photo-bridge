@@ -45,6 +45,7 @@ function GoogleImage({ src, accessToken, alt, className }: { src: string; access
     return <div className="w-full h-full bg-gray-800 animate-pulse flex items-center justify-center text-xs text-gray-500">Loading...</div>;
   }
 
+  // eslint-disable-next-line @next/next/no-img-element
   return <img src={imageSrc} alt={alt} className={className} />;
 }
 
@@ -239,8 +240,6 @@ export default function PhotoGrid() {
     setUploadResult(null);
     
     const total = photosToUpload.length;
-    let uploadedCount = 0;
-    const failedList: string[] = [];
 
     setUploadProgress({
       status: 'uploading',
@@ -291,13 +290,11 @@ export default function PhotoGrid() {
 
           const data: UploadResult = await res.json();
           if (data.uploaded > 0) {
-            uploadedCount++;
             setUploadProgress(prev => ({
               ...prev,
               uploaded: prev.uploaded + 1
             }));
           } else {
-            failedList.push(filename);
             setUploadProgress(prev => ({
               ...prev,
               failed: [...prev.failed, filename]
@@ -305,7 +302,6 @@ export default function PhotoGrid() {
           }
         } catch (err) {
           console.error(`Upload error for ${filename}:`, err);
-          failedList.push(filename);
           setUploadProgress(prev => ({
             ...prev,
             failed: [...prev.failed, filename]

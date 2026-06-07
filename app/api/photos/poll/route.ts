@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getSecret } from '@/lib/secrets';
+import { GoogleMediaItem } from '@/types/photos';
 
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get('sessionId');
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. Selection complete, now fetch all the media items (handling pagination)
-    let allMediaItems: any[] = [];
+    let allMediaItems: GoogleMediaItem[] = [];
     let nextPageToken: string | null = null;
     let pageCount = 0;
 

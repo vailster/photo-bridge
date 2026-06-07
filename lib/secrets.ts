@@ -57,8 +57,9 @@ export async function getSecret(name: string): Promise<string> {
     const payload = Buffer.from(base64Payload, 'base64').toString('utf8');
     secretCache[name] = payload;
     return payload;
-  } catch (error: any) {
-    console.error(`Error fetching secret ${name} from GSM:`, error?.message || error);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`Error fetching secret ${name} from GSM:`, errorMsg);
     return '';
   }
 }

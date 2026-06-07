@@ -42,11 +42,13 @@ async function getAuthOptions(): Promise<NextAuthOptions> {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function GET(req: any, res: any) {
   const options = await getAuthOptions();
   return await NextAuth(req, res, options);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function POST(req: any, res: any) {
   const options = await getAuthOptions();
   return await NextAuth(req, res, options);
