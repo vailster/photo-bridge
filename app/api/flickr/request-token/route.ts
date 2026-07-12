@@ -27,6 +27,15 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  console.log('--- Flickr Callback URL Debug ---');
+  console.log('NEXTAUTH_URL env:', process.env.NEXTAUTH_URL);
+  console.log('x-forwarded-proto:', req.headers.get('x-forwarded-proto'));
+  console.log('x-forwarded-host:', req.headers.get('x-forwarded-host'));
+  console.log('host header:', req.headers.get('host'));
+  console.log('req.nextUrl.host:', req.nextUrl.host);
+  console.log('Constructed Callback URL:', callbackUrl);
+  console.log('---------------------------------');
+
   const request_data = {
     url: 'https://www.flickr.com/services/oauth/request_token',
     method: 'GET',
