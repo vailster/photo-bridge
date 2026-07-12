@@ -5,11 +5,33 @@ import { cookies } from 'next/headers';
 export async function GET(req: NextRequest) {
   const isSecure = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
   
+  // Dynamically determine the callback URL based on the request headers so that it works
+  // when accessing the app from different devices on a local network (e.g. using the server's IP address).
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
+  const protocol = isSecure ? 'https' : 'http';
+  let callbackUrl = `${protocol}://${host}/api/flickr/callback`;
+
+  // If NEXTAUTH_URL is set and is a production/external URL, we prefer to use it.
+  // Otherwise, we default to the dynamic URL to prevent redirection errors like 0.0.0.0 or localhost.
+  if (process.env.NEXTAUTH_URL) {
+    try {
+      const configuredUrl = new URL(process.env.NEXTAUTH_URL);
+      const isLocalhostOrZero = configuredUrl.hostname === 'localhost' || 
+                                configuredUrl.hostname === '0.0.0.0' || 
+                                configuredUrl.hostname === '127.0.0.1';
+      if (!isLocalhostOrZero) {
+        callbackUrl = `${process.env.NEXTAUTH_URL.replace(/\/$/, '')}/api/flickr/callback`;
+      }
+    } catch (e) {
+      console.warn('Invalid NEXTAUTH_URL configured:', process.env.NEXTAUTH_URL);
+    }
+  }
+
   const request_data = {
     url: 'https://www.flickr.com/services/oauth/request_token',
     method: 'GET',
     data: {
-      oauth_callback: `${process.env.NEXTAUTH_URL}/api/flickr/callback`,
+      oauth_callback: callbackUrl,
     },
   };
 
