@@ -89,7 +89,27 @@ export async function GET(req: NextRequest) {
     // Clear the temporary request token secret
     cookieStore.delete('flickr_request_token_secret');
 
-    return NextResponse.redirect(new URL('/', req.url));
+    // Dynamically determine the redirect URL based on x-forwarded headers or NEXTAUTH_URL
+    // to prevent redirection to internal container addresses like 0.0.0.0.
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
+    const protocol = isSecure ? 'https' : 'http';
+    let redirectUrl = `${protocol}://${host}/`;
+
+    if (process.env.NEXTAUTH_URL) {
+      try {
+        const configuredUrl = new URL(process.env.NEXTAUTH_URL);
+        const isLocalhostOrZero = configuredUrl.hostname === 'localhost' || 
+                                  configuredUrl.hostname === '0.0.0.0' || 
+                                  configuredUrl.hostname === '127.0.0.1';
+        if (!isLocalhostOrZero) {
+          redirectUrl = `${process.env.NEXTAUTH_URL.replace(/\/$/, '')}/`;
+        }
+      } catch (e) {
+        console.warn('Invalid NEXTAUTH_URL configured:', process.env.NEXTAUTH_URL);
+      }
+    }
+
+    return NextResponse.redirect(redirectUrl);
 
   } catch (error) {
     console.error('Error getting access token', error);
