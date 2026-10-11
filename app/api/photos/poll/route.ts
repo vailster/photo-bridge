@@ -59,7 +59,11 @@ export async function GET(req: NextRequest) {
     
     // If user hasn't finished picking yet
     if (!sessionData.mediaItemsSet) {
-      return NextResponse.json({ status: 'picking' }, { status: 202 });
+      return NextResponse.json({
+        status: 'picking',
+        pollInterval: sessionData.pollingConfig?.pollInterval,
+        expireTime: sessionData.expireTime,
+      }, { status: 202 });
     }
 
     // 2. Selection complete, now fetch all the media items (handling pagination)

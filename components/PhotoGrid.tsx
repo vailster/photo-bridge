@@ -49,6 +49,18 @@ function GoogleImage({ src, accessToken, alt, className }: { src: string; access
   return <img src={imageSrc} alt={alt} className={className} />;
 }
 
+const DEFAULT_POLL_INTERVAL_MS = 3000;
+const MIN_POLL_INTERVAL_MS = 1000;
+const FALLBACK_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const MAX_CONSECUTIVE_POLL_ERRORS = 5;
+
+// Parses a Google API duration string such as "5s" or "1.5s" into milliseconds.
+function parseDurationMs(duration: unknown): number | null {
+  if (typeof duration !== 'string') return null;
+  const match = /^(\d+(?:\.\d+)?)s$/.exec(duration);
+  return match ? Math.round(parseFloat(match[1]) * 1000) : null;
+}
+
 export default function PhotoGrid() {
   const { data: session } = useSession();
   const googleAccessToken = session?.accessToken as string;
@@ -59,7 +71,7 @@ export default function PhotoGrid() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [selectedPhotos, setSelectedPhotos] = useState<GoogleMediaItem[]>([]);
-  const [isPopupActive, setIsPopupActive] = useState(false);
+  const [pickerUri, setPickerUri] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{
     status: 'idle' | 'uploading' | 'completed' | 'error';
     total: number;
@@ -77,6 +89,7 @@ export default function PhotoGrid() {
   const startPicker = async () => {
     setLoading(true);
     setUploadResult(null);
+    setPickerUri(null);
     setUploadProgress({
       status: 'idle',
       total: 0,
@@ -84,10 +97,25 @@ export default function PhotoGrid() {
       failed: [],
       currentPhotoName: ''
     });
+
+    // Open the popup synchronously, while we still have the click's user gesture.
+    // Opening it after the fetch below gets it blocked by Safari and most mobile browsers.
+    const width = 600;
+    const height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    const popup = window.open(
+      '',
+      'google-photos-picker',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+    pickerWindowRef.current = popup;
+
     try {
       const res = await fetch('/api/photos', { method: 'POST' });
       
       if (res.status === 401) {
+        popup?.close();
         setUploadResult("Google connection expired. Redirecting to sign in...");
         setTimeout(() => {
           signIn('google');
@@ -101,25 +129,17 @@ export default function PhotoGrid() {
         throw new Error(data.error || 'Failed to create picker session');
       }
 
+      const uri = `${data.pickerUri}/autoclose`;
+      if (popup && !popup.closed) {
+        popup.location.href = uri;
+      }
+
+      setPickerUri(uri);
       setSessionId(data.id);
-      
-      // Open the picker URI in a popup
-      const width = 600;
-      const height = 700;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
-      
-      const popup = window.open(
-        `${data.pickerUri}/autoclose`, 
-        'Google Photos Picker', 
-        `width=${width},height=${height},left=${left},top=${top}`
-      );
-      
-      pickerWindowRef.current = popup;
       setIsPicking(true);
-      setIsPopupActive(true);
       
     } catch (err) {
+      popup?.close();
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error(err);
       setUploadResult(`Error: ${message}`);
@@ -138,100 +158,93 @@ export default function PhotoGrid() {
     };
   }, []);
 
+  // Poll the picker session until Google reports a selection or the session expires.
+  // Note: we can't use the popup's `closed` flag for this. The Google Photos picker sets a
+  // Cross-Origin-Opener-Policy that severs the opener link, so `closed` reads true while
+  // the user is still picking.
   useEffect(() => {
+    if (!sessionId || !isPicking) return;
+
     let timeoutId: NodeJS.Timeout | null = null;
     let isCancelled = false;
-    let closedWindowPollCount = 0;
-    const MAX_CLOSED_WINDOW_POLLS = 15; // allow up to 15 polls (45 seconds) after window is closed to support large selections
+    let consecutiveErrors = 0;
+    let pollIntervalMs = DEFAULT_POLL_INTERVAL_MS;
+    let deadline = Date.now() + FALLBACK_SESSION_TIMEOUT_MS;
 
+    const stop = (message: string | null) => {
+      setIsPicking(false);
+      setUploadResult(message);
+    };
 
-    // Check popup status every second
-    const popupCheckInterval = setInterval(() => {
-      if (pickerWindowRef.current?.closed) {
-        setIsPopupActive(false);
+    const scheduleNext = () => {
+      if (Date.now() > deadline) {
+        stop('The Google Photos picker session expired before a selection was received. Please try again.');
+        return;
       }
-    }, 1000);
+      timeoutId = setTimeout(poll, pollIntervalMs);
+    };
+
+    const handleError = (message: string) => {
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
+        stop(`Error: ${message}`);
+      } else {
+        scheduleNext();
+      }
+    };
 
     const poll = async () => {
-      if (isCancelled || !sessionId || !isPicking) return;
+      if (isCancelled) return;
       
       try {
         const res = await fetch(`/api/photos/poll?sessionId=${sessionId}`);
-        
-        // Check if cancelled after the async operation
         if (isCancelled) return;
 
         if (res.status === 401) {
-           setIsPicking(false);
-           setUploadResult("Google connection expired. Redirecting to sign in...");
+           stop("Google connection expired. Redirecting to sign in...");
            setTimeout(() => {
              signIn('google');
            }, 1500);
            return;
         }
 
+        const data = await res.json();
+        if (isCancelled) return;
+
         if (res.status === 202) {
-           if (pickerWindowRef.current?.closed) {
-              closedWindowPollCount++;
-              if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
-                 setIsPicking(false);
-                 setUploadResult(null);
-                 return;
-              }
-           }
-           timeoutId = setTimeout(poll, 3000);
+           consecutiveErrors = 0;
+           const interval = parseDurationMs(data.pollInterval);
+           if (interval) pollIntervalMs = Math.max(interval, MIN_POLL_INTERVAL_MS);
+           const expireTime = data.expireTime ? Date.parse(data.expireTime) : NaN;
+           if (!Number.isNaN(expireTime)) deadline = expireTime;
+           scheduleNext();
            return;
         }
 
-        const data = await res.json();
-        
-        // Re-check cancellation after parsing json
-        if (isCancelled) return;
+        if (!res.ok) {
+           handleError(data.error || `Polling failed with status ${res.status}`);
+           return;
+        }
 
-        if (res.ok && data.mediaItems && data.mediaItems.length > 0) {
+        if (data.mediaItems && data.mediaItems.length > 0) {
            setIsPicking(false);
            setSelectedPhotos(data.mediaItems);
            setUploadResult(`You selected ${data.mediaItems.length} photos! Ready to upload.`);
-        } else if (res.ok) {
-           setIsPicking(false);
-           setUploadResult(null);
         } else {
-           if (pickerWindowRef.current?.closed) {
-              closedWindowPollCount++;
-               if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
-                  setIsPicking(false);
-                  setUploadResult(null);
-               } else {
-                 timeoutId = setTimeout(poll, 3000);
-              }
-           } else {
-              timeoutId = setTimeout(poll, 3000);
-           }
+           stop('No photos were selected.');
         }
       } catch (e) {
          if (isCancelled) return;
          console.error("Polling error:", e);
-         if (pickerWindowRef.current?.closed) {
-           closedWindowPollCount++;
-           if (closedWindowPollCount >= MAX_CLOSED_WINDOW_POLLS) {
-             setIsPicking(false);
-           } else {
-             timeoutId = setTimeout(poll, 3000);
-           }
-         } else {
-           timeoutId = setTimeout(poll, 3000);
-         }
+         handleError(e instanceof Error ? e.message : 'Network error while checking selection');
       }
     };
 
-    if (sessionId && isPicking) {
-      poll();
-    }
+    poll();
     
     return () => {
       isCancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
-      clearInterval(popupCheckInterval);
     };
   }, [sessionId, isPicking]);
 
@@ -363,13 +376,21 @@ export default function PhotoGrid() {
             <FaGoogle /> {loading ? 'Initializing Picker...' : 'Select Photos from Google'}
           </button>
           
-          {isPicking && isPopupActive && (
-             <p className="mt-5 text-sm text-yellow-500 animate-pulse">Waiting for selection in popup window...</p>
-          )}
-
-          {isPicking && !isPopupActive && (
+          {isPicking && (
              <div className="mt-5 flex flex-col items-center gap-3">
-                <p className="text-sm text-blue-400 animate-pulse">Processing selection (this can take up to a minute for large batches)...</p>
+                <p className="text-sm text-yellow-500 animate-pulse">
+                  Waiting for your selection in Google Photos. Click &quot;Done&quot; in the picker when you&apos;re finished.
+                </p>
+                {pickerUri && (
+                  <a
+                    href={pickerUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 underline"
+                  >
+                    Picker didn&apos;t open? Open it here
+                  </a>
+                )}
                 <button 
                   className="btn btn-gray text-xs px-3 py-1.5"
                   onClick={() => {
